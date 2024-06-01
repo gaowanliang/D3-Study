@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>P2P Data Flow Visualization with D3.js</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      .node {
+        stroke: #000;
+        stroke-width: 0.5px;
+      }
+
+      .link {
+        stroke: teal;
+        stroke-opacity: 0.6;
+        stroke-width: 1.5px;
+      }
+
+      .pixel {
+        fill: lightgray;
+        stroke: none;
+      }
+
+      text {
+        font: 10px sans-serif;
+        pointer-events: none;
+      }
+
+      .particle {
+        stroke: none;
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="960" height="600"></svg>
+    <script>
+      const svg = d3.select("svg"),
+        width = +svg.attr("width"),
+        height = +svg.attr("height");
+
+      const nodes = [
+        { id: "A", x: 100, y: 100 },
+        { id: "B", x: 500, y: 100 },
+        { id: "C", x: 100, y: 500 },
+        { id: "D", x: 500, y: 500 },
+        { id: "E", x: 300, y: 300 },
+      ];
+
+      const links = [{ source: "E", target: "A" }];
+
+      const nodeSize = 16;
+      const pixelSize = 5;
+      const particleSize = 5;
+      const speed = 0.0005;
+
+      // Create a color scale for particles
+      const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+      function createBitmapData(full = false) {
+        const data = [];
+        for (let i = 0; i < nodeSize; i++) {
+          for (let j = 0; j < nodeSize; j++) {
+            data.push({ x: i, y: j, value: full });
+          }
+        }
+        return data;
+      }
+
+      const bitmaps = {};
+      nodes.forEach((node) => {
+        bitmaps[node.id] = createBitmapData(node.id === "E");
+      });
+
+      const node = svg
+        .append("g")
+        .attr("class", "nodes")
+        .selectAll("g")
+        .data(nodes)
+        .enter()
+        .append("g")
+        .attr("transform", (d) => `translate(${d.x},${d.y})`);
+
+      const bitmap = node
+        .selectAll("rect")
+        .data((d) => bitmaps[d.id])
+        .enter()
+        .append("rect")
+        .attr("width", pixelSize)
+        .attr("height", pixelSize)
+        .attr("x", (d) => d.x * pixelSize - (nodeSize * pixelSize) / 2)
+        .attr("y", (d) => d.y * pixelSize - (nodeSize * pixelSize) / 2)
+        .attr("fill", (d) => (d.value ? "teal" : "lightgray"));
+
+      svg
+        .append("g")
+        .selectAll("text")
+        .data(nodes)
+        .enter()
+        .append("text")
+        .attr("x", (d) => d.x)
+        .attr("y", (d) => d.y - (nodeSize * pixelSize) / 2 - 10)
+        .attr("text-anchor", "middle")
+        .text((d) => d.id);
+
+      let particles = [];
+
+      function createParticles(sourceId, targetId, coord) {
+        const sourceNode = nodes.find((n) => n.id === sourceId);
+        const targetNode = nodes.find((n) => n.id === targetId);
+        const sourceBitmap = bitmaps[sourceId];
+        const targetBitmap = bitmaps[targetId];
+
+        const sourcePoint = sourceBitmap.find(
+          (d) => d.x === coord.x && d.y === coord.y && d.value
+        );
+        const targetPoint = targetBitmap.find(
+          (d) => d.x === coord.x && d.y === coord.y && !d.value
+        );
+
+        if (!sourcePoint || !targetPoint) return;
+
+        const particle = {
+          xStart:
+            sourceNode.x +
+            (sourcePoint.x * pixelSize - (nodeSize * pixelSize) / 2),
+          yStart:
+            sourceNode.y +
+            (sourcePoint.y * pixelSize - (nodeSize * pixelSize) / 2),
+          x:
+            sourceNode.x +
+            (sourcePoint.x * pixelSize - (nodeSize * pixelSize) / 2),
+          y:
+            sourceNode.y +
+            (sourcePoint.y * pixelSize - (nodeSize * pixelSize) / 2),
+          targetNode: targetId,
+          targetX:
+            targetNode.x +
+            (targetPoint.x * pixelSize - (nodeSize * pixelSize) / 2),
+          targetY:
+            targetNode.y +
+            (targetPoint.y * pixelSize - (nodeSize * pixelSize) / 2),
+          startTime: Math.random() * 2000,
+          progress: 0,
+          width: pixelSize,
+          height: pixelSize,
+          angle: 0,
+          coord: coord,
+          color: colorScale(Math.random()), // Assign a random color to each particle
+        };
+
+        particles.push(particle);
+      }
+
+      function updateParticles(elapsed) {
+        particles.forEach((p, i) => {
+          if (elapsed > p.startTime) {
+            const t = (elapsed - p.startTime) * speed;
+            p.progress = d3.easeCubicInOut(t); // apply easing function
+            if (p.progress > 1) {
+              p.progress = 1;
+            }
+            p.x = p.xStart * (1 - p.progress) + p.targetX * p.progress;
+            p.y = p.yStart * (1 - p.progress) + p.targetY * p.progress;
+
+            // Calculate elongation and angle
+            const dx = p.targetX - p.xStart;
+            const dy = p.targetY - p.yStart;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            //
+            const guassFactor =
+              (1 / (0.1 * Math.pow(2 * Math.PI, 0.5))) *
+                Math.exp((-4 * Math.pow(p.progress - 0.5, 2)) / 0.3) +
+              1;
+
+            p.width = particleSize * guassFactor;
+            p.height = particleSize;
+            console.log(p.width);
+
+            // Adjust angle
+            if (p.progress > 0.95) {
+              p.angle = 0;
+            } else {
+              p.angle = Math.atan2(dy, dx);
+            }
+
+            // If the particle has reached its target, remove it and update the bitmap
+            if (p.progress >= 1) {
+              const bitmapData = bitmaps[p.targetNode];
+              const targetPixel = bitmapData.find(
+                (d) => d.x === p.coord.x && d.y === p.coord.y
+              );
+              if (targetPixel) {
+                targetPixel.value = true;
+                // Check if target node can send data to others
+                nodes.forEach((node) => {
+                  if (node.id !== "E" && node.id !== p.targetNode) {
+                    const otherBitmap = bitmaps[node.id];
+                    const otherPixel = otherBitmap.find(
+                      (d) => d.x === p.coord.x && d.y === p.coord.y
+                    );
+                    if (otherPixel && !otherPixel.value) {
+                      createParticles(p.targetNode, node.id, p.coord);
+                    }
+                  }
+                });
+              }
+
+              particles.splice(i, 1);
+            }
+          }
+        });
+      }
+
+      function drawParticles() {
+        const particleSelection = svg.selectAll(".particle").data(particles);
+
+        particleSelection
+          .enter()
+          .append("rect")
+          .attr("class", "particle")
+          .merge(particleSelection)
+          .attr("x", (d) => d.x)
+          .attr("y", (d) => d.y)
+          .attr("width", (d) => d.width)
+          .attr("height", (d) => d.height)
+          .attr(
+            "transform",
+            (d) => `rotate(${(d.angle * 180) / Math.PI}, ${d.x}, ${d.y})`
+          )
+          .attr("fill", (d) => d.color); // Use the color of each particle
+
+        particleSelection.exit().remove();
+      }
+
+      function drawBitmap() {
+        bitmap.attr("fill", (d) => (d.value ? "teal" : "lightgray"));
+      }
+
+      function tick(elapsed) {
+        updateParticles(elapsed);
+        drawParticles();
+        drawBitmap();
+        requestAnimationFrame(tick);
+      }
+
+      // Initialize particles from E to others
+      for (let i = 0; i < nodeSize; i++) {
+        for (let j = 0; j < nodeSize; j++) {
+          links.forEach((link) => {
+            createParticles(link.source, link.target, { x: i, y: j });
+          });
+
+        }
+
+      }
+
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>
