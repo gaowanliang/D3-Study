@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>P2P Data Flow Visualization with D3.js</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="d3.v7.min.js"></script>
     <style>
       .node {
         stroke: #000;
@@ -33,26 +33,26 @@
     </style>
   </head>
   <body>
-    <svg width="960" height="600"></svg>
+    <svg width="1080" height="1920"></svg>
     <script>
       const svg = d3.select("svg"),
         width = +svg.attr("width"),
         height = +svg.attr("height");
 
       const nodes = [
-        { id: "A", x: 100, y: 100 },
-        { id: "B", x: 500, y: 100 },
-        { id: "C", x: 100, y: 500 },
-        { id: "D", x: 500, y: 500 },
-        { id: "E", x: 300, y: 300 },
+        { id: "A", x: 100, y: 400 },
+        { id: "B", x: 800, y: 400 },
+        { id: "C", x: 200, y: 800 },
+        { id: "D", x: 700, y: 800 },
+        { id: "E", x: 450, y: 100 },
       ];
 
       const links = [{ source: "E", target: "A" }];
 
-      const nodeSize = 16;
+      const nodeSize = 32;
       const pixelSize = 5;
       const particleSize = 5;
-      const speed = 0.0005;
+      const speed = 0.0002;
 
       // Create a color scale for particles
       const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
@@ -71,6 +71,12 @@
       nodes.forEach((node) => {
         bitmaps[node.id] = createBitmapData(node.id === "E");
       });
+      const doneCoordinates = {};
+      for (let i = 0; i < nodeSize; i++) {
+        for (let j = 0; j < nodeSize; j++) {
+          doneCoordinates[`x${i}y${j}`] = ["E"];
+        }
+      }
 
       const node = svg
         .append("g")
@@ -90,6 +96,7 @@
         .attr("height", pixelSize)
         .attr("x", (d) => d.x * pixelSize - (nodeSize * pixelSize) / 2)
         .attr("y", (d) => d.y * pixelSize - (nodeSize * pixelSize) / 2)
+        .attr("stroke", "black")
         .attr("fill", (d) => (d.value ? "teal" : "lightgray"));
 
       svg
@@ -105,17 +112,30 @@
 
       let particles = [];
 
-      function createParticles(sourceId, targetId, coord) {
+      function shuffleArray(array) {
+        let shuffledArray = [...array]; // 创建一个新的数组，以避免修改原始数组
+        for (let i = shuffledArray.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffledArray[i], shuffledArray[j]] = [
+            shuffledArray[j],
+            shuffledArray[i],
+          ]; // 交换元素
+        }
+        return shuffledArray;
+      }
+
+      function createParticles(sourceId, targetId, coordinate, elapsed = 0) {
+        console.log(sourceId, targetId, coordinate);
         const sourceNode = nodes.find((n) => n.id === sourceId);
         const targetNode = nodes.find((n) => n.id === targetId);
         const sourceBitmap = bitmaps[sourceId];
         const targetBitmap = bitmaps[targetId];
 
         const sourcePoint = sourceBitmap.find(
-          (d) => d.x === coord.x && d.y === coord.y && d.value
+          (d) => d.x === coordinate.x && d.y === coordinate.y && d.value
         );
         const targetPoint = targetBitmap.find(
-          (d) => d.x === coord.x && d.y === coord.y && !d.value
+          (d) => d.x === coordinate.x && d.y === coordinate.y && !d.value
         );
 
         if (!sourcePoint || !targetPoint) return;
@@ -140,12 +160,12 @@
           targetY:
             targetNode.y +
             (targetPoint.y * pixelSize - (nodeSize * pixelSize) / 2),
-          startTime: Math.random() * 2000,
+          startTime: Math.random() * 10000 + elapsed,
           progress: 0,
           width: pixelSize,
           height: pixelSize,
           angle: 0,
-          coord: coord,
+          coordinate: coordinate,
           color: colorScale(Math.random()), // Assign a random color to each particle
         };
 
@@ -175,7 +195,7 @@
 
             p.width = particleSize * guassFactor;
             p.height = particleSize;
-            console.log(p.width);
+            // console.log(p.width);
 
             // Adjust angle
             if (p.progress > 0.95) {
@@ -188,22 +208,71 @@
             if (p.progress >= 1) {
               const bitmapData = bitmaps[p.targetNode];
               const targetPixel = bitmapData.find(
-                (d) => d.x === p.coord.x && d.y === p.coord.y
+                (d) => d.x === p.coordinate.x && d.y === p.coordinate.y
               );
               if (targetPixel) {
                 targetPixel.value = true;
+
+                if (
+                  doneCoordinates[
+                    `x${p.coordinate.x}y${p.coordinate.y}`
+                  ].findIndex((d) => d === p.targetNode) === -1
+                ) {
+                  doneCoordinates[`x${p.coordinate.x}y${p.coordinate.y}`].push(
+                    p.targetNode
+                  );
+                }
+
                 // Check if target node can send data to others
-                nodes.forEach((node) => {
-                  if (node.id !== "E" && node.id !== p.targetNode) {
-                    const otherBitmap = bitmaps[node.id];
+                // nodes.forEach((node) => {
+                //   if (node.id !== "E" && node.id !== p.targetNode) {
+                //     const otherBitmap = bitmaps[node.id];
+                //     const otherPixel = otherBitmap.find(
+                //       (d) => d.x === p.coordinate.x && d.y === p.coordinate.y
+                //     );
+                //     if (otherPixel && !otherPixel.value) {
+                //       createParticles(p.targetNode, node.id, p.coordinate);
+                //     }
+                //   }
+                // });
+                const inodes = shuffleArray([...nodes]);
+                // console.log(inodes);
+                for (let i = 0; i < inodes.length; i++) {
+                  if (inodes[i].id !== "E" && inodes[i].id !== p.targetNode) {
+                    const otherBitmap = bitmaps[inodes[i].id];
                     const otherPixel = otherBitmap.find(
-                      (d) => d.x === p.coord.x && d.y === p.coord.y
+                      (d) => d.x === p.coordinate.x && d.y === p.coordinate.y
                     );
+                    // console.log(otherPixel);
                     if (otherPixel && !otherPixel.value) {
-                      createParticles(p.targetNode, node.id, p.coord);
+                      console.log(
+                        doneCoordinates[`x${p.coordinate.x}y${p.coordinate.y}`],
+                        doneCoordinates[`x${p.coordinate.x}y${p.coordinate.y}`][
+                          Math.floor(
+                            Math.random() *
+                              doneCoordinates[
+                                `x${p.coordinate.x}y${p.coordinate.y}`
+                              ].length
+                          )
+                        ]
+                      );
+                      createParticles(
+                        doneCoordinates[`x${p.coordinate.x}y${p.coordinate.y}`][
+                          Math.floor(
+                            Math.random() *
+                              doneCoordinates[
+                                `x${p.coordinate.x}y${p.coordinate.y}`
+                              ].length
+                          )
+                        ],
+                        inodes[i].id,
+                        p.coordinate,
+                        elapsed
+                      );
+                      break;
                     }
                   }
-                });
+                }
               }
 
               particles.splice(i, 1);
@@ -241,21 +310,23 @@
         updateParticles(elapsed);
         drawParticles();
         drawBitmap();
-        requestAnimationFrame(tick);
       }
 
       // Initialize particles from E to others
       for (let i = 0; i < nodeSize; i++) {
         for (let j = 0; j < nodeSize; j++) {
           links.forEach((link) => {
-            createParticles(link.source, link.target, { x: i, y: j });
+            createParticles(
+              link.source,
+              nodes[Math.floor(Math.random() * 4)].id,
+              { x: i, y: j }
+            );
           });
-
         }
-
       }
 
-      requestAnimationFrame(tick);
+      // Use d3-timer for smooth animation
+      d3.timer(tick);
     </script>
   </body>
 </html>
